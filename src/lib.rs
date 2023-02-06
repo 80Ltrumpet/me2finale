@@ -22,17 +22,21 @@
 //! rate_.
 //!
 //! ```no_run
+//! # use std::error::Error;
+//! #
 //! use me2finale::prelude::*;
-//!
+//! 
+//! # fn main() -> Result<(), Box<dyn Error>> {
+//! #
 //! #[cfg(feature = "generate")]
 //! let outcome_map = me2finale::generate::outcome_map();
 //!
 //! #[cfg(not(feature = "generate"))]
 //! let outcome_map = {
 //!     use serde::Deserialize;
-//!     let file = std::fs::File::open("outcome_map.rmp").unwrap();
+//!     let file = std::fs::File::open("outcome_map.rmp")?;
 //!     let mut deserializer = rmp_serde::Deserializer::new(file);
-//!     OutcomeMap::deserialize(&mut deserializer).unwrap()
+//!     OutcomeMap::deserialize(&mut deserializer)?
 //! };
 //!
 //! let total_traversals = outcome_map
@@ -52,6 +56,9 @@
 //!
 //! let tali_survival_rate = tali_survivals as f32 / total_traversals as f32;
 //! println!("Tali's absolute survival rate is {tali_survival_rate}.");
+//! #
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! ## Optional Features
