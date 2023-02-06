@@ -1,0 +1,31 @@
+[package]
+name = "me2finale"
+version = "0.1.0"
+edition = "2021"
+authors = ["Andrew D. Lehmer"]
+categories = ["games", "simulation"]
+description = "Mass Effect 2 final mission analysis"
+exclude = ["/outcome_map.rmp"]
+keywords = ["mass-effect-2", "mass_effect_2"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/80Ltrumpet/me2finale"
+
+[dependencies]
+dashmap = { version = "5.4.0", optional = true }
+itertools = { version = "0.10.5", optional = true }
+rayon = { version = "1.6.1", optional = true }
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+rmp-serde = "1.1.1"
+
+[features]
+generate = ["dep:dashmap", "dep:itertools", "dep:rayon"]
+
+[[example]]
+name = "generate"
+required-features = ["generate"]
+
+[package.metadata."docs.rs"]
+all-features = true
