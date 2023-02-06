@@ -223,5 +223,6 @@ minutes to generate all of the data. Good enough!
 [_Mass Effect 3_]: https://en.wikipedia.org/wiki/Mass_Effect_3
 [subreddit]: https://www.reddit.com/r/masseffect/
 [flowchart]: https://external-preview.redd.it/7SeMlQbU-xFC9TjKurncqx1y8NH3RJiolYRqFAoXfWg.jpg?auto=webp&s=a57ad480a357234ec7fa5f865b00b60b95670df0
+[a nearly identical project]: https://github.com/80Ltrumpet/me2-decision-tree
 [`rayon`]: https://crates.io/crates/rayon
 [`dashmap`]: https://crates.io/crates/dashmap
