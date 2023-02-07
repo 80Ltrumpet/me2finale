@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ally::AllySet;
+use crate::allyset::AllySet;
 use crate::decision::DecisionPath;
 
 /// [`HashMap`] of [`Outcome`]s to [metadata][DecisionPathMetadata] describing the [`DecisionPath`]s

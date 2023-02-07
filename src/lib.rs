@@ -63,7 +63,7 @@
 //!
 //! ## Optional Features
 //!
-//! By default, this crate supports merely exposes types and facilities necessary to query and
+//! By default, this crate merely exposes types and facilities necessary to query and
 //! serialize/deserialize (via [`serde`] traits) _existing_ outcome data. If you wish to generate
 //! the outcome data yourself, you must enable the `generate` feature. Doing so adds a few external
 //! dependencies and gives access to [`generate::outcome_map`].
@@ -78,6 +78,7 @@
 //! [`me2finale` repository]: https://github.com/80Ltrumpet/me2finale
 
 pub mod ally;
+pub mod allyset;
 pub mod decision;
 #[cfg(feature = "generate")]
 pub mod generate;
@@ -89,7 +90,7 @@ mod death;
 #[doc(inline)]
 pub use ally::Ally;
 #[doc(inline)]
-pub use ally::AllySet;
+pub use allyset::AllySet;
 #[doc(inline)]
 pub use outcome::Outcome;
 #[doc(inline)]
@@ -97,6 +98,7 @@ pub use outcome::OutcomeMap;
 
 /// Commonly used types
 pub mod prelude {
-    pub use crate::ally::{Ally, AllySet};
+    pub use crate::ally::Ally;
+    pub use crate::allyset::AllySet;
     pub use crate::outcome::{Outcome, OutcomeMap};
 }

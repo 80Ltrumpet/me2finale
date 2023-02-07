@@ -45,18 +45,22 @@ _Mass Effect 2_ and beyond are not considered in the scope of this project. See
 [Limitations](#limitations) for a discussion of the rationale behind the
 exclusions.
 
-To generate the data yourself, run the `generate` example provided in the
+To generate the data yourself, run the [`generate` example] provided in the
 source.
 
 ```shell
-$ cargo run --release --example generate -- PATH
+$ cargo run --release --features generate --example generate -- PATH
 ```
+
+Alternatively, you can reuse the data included in
+[`outcome_map.rmp`](./outcome_map.rmp). It is an `OutcomeMap` serialized in the
+[MessagePack] format (via the [`rmp-serde`] crate).
 
 ## Interesting Facts
 
 To show the kind of questions that can be answered with the data, the following
-statistics were generated with the provided `analyze` example (and re-formatted
-for markdown).
+statistics were generated with the provided [`analyze` example] (and
+re-formatted for markdown).
 
 ```shell
 $ cargo run --example analyze -- outcome_map.rmp
@@ -221,6 +225,10 @@ minutes to generate all of the data. Good enough!
 
 [_Mass Effect 2_]: https://en.wikipedia.org/wiki/Mass_Effect_2
 [_Mass Effect 3_]: https://en.wikipedia.org/wiki/Mass_Effect_3
+[`generate` example]: ./examples/generate.rs
+[MessagePack]: https://msgpack.org/
+[`rmp-serde`]: https://crates.io/crates/rmp-serde
+[`analyze` example]: ./examples/analyze.rs
 [subreddit]: https://www.reddit.com/r/masseffect/
 [flowchart]: https://external-preview.redd.it/7SeMlQbU-xFC9TjKurncqx1y8NH3RJiolYRqFAoXfWg.jpg?auto=webp&s=a57ad480a357234ec7fa5f865b00b60b95670df0
 [a nearly identical project]: https://github.com/80Ltrumpet/me2-decision-tree

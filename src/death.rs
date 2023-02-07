@@ -1,10 +1,11 @@
 //! Victim determination rules
 //!
 //! At certain points in the final mission of _Mass Effect 2_, if certain conditions are met, one
-//! or more allies will die. This module enumerates the reasons for which allies may die and
-//! codifies the rules by which victims are selected.
+//! or more allies will die. This module enumerates the reasons why allies may die and codifies the
+//! rules by which victims are selected.
 
-use crate::ally::{Ally, AllySet};
+use crate::ally::Ally;
+use crate::allyset::AllySet;
 
 /// Enumeration of conditions leading to the death of an ally
 #[derive(Debug)]
@@ -88,7 +89,8 @@ impl DeathReason {
 /// # Panics
 ///
 /// This function panics if `defenders` is empty. It is not possible to enter the final battle
-/// without at least three surviving allies.
+/// without at least three surviving allies, two of which must be selected for Shepard's squad, so
+/// the caller must guarantee that there is at least one defender.
 pub(crate) fn get_defense_victims(defenders: AllySet, loyal: AllySet) -> AllySet {
     let toll = defense_toll(defenders, loyal);
     let disloyal = defenders - loyal;
@@ -146,7 +148,7 @@ fn defense_toll(defenders: AllySet, loyal: AllySet) -> usize {
     }
     let defender_count = defenders.len();
     let score = defenders
-        .iter()
+        .into_iter()
         .map(|ally| defense_score(ally, loyal))
         .sum::<u8>() as f32
         / defender_count as f32;

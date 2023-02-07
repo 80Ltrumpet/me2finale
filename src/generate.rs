@@ -7,9 +7,10 @@ use dashmap::DashMap;
 use itertools::Itertools;
 use rayon::prelude::*;
 
-use crate::ally::{Ally, AllySet};
+use crate::ally::Ally;
+use crate::allyset::AllySet;
 use crate::death::{self, DeathReason};
-use crate::decision::{DecisionPathLedger, FirstLeader, SquadSelection};
+use crate::decision::{DecisionPath, SquadSelection};
 use crate::outcome::{DecisionPathMetadata, Outcome, OutcomeMap};
 
 /// Generates an [`OutcomeMap`] by recursively traversing all decision paths.
@@ -30,6 +31,13 @@ use crate::outcome::{DecisionPathMetadata, Outcome, OutcomeMap};
 /// compared to running the same algorithm on a single thread. To put this in real numbers, when
 /// measured on the author's system, this took the run time from about 90 minutes down to about
 /// 10.5 minutes!
+///
+/// # Example
+///
+/// See the [top-level crate docs][crate] for an example of how to use this function, or take a
+/// look at the [example] in the repo.
+///
+/// [example]: https://github.com/80Ltrumpet/me2finale/blob/main/examples/generate.rs
 pub fn outcome_map() -> OutcomeMap {
     OutcomeMapGenerator::new()
         .generate()
@@ -72,7 +80,7 @@ impl OutcomeMapGenerator {
     /// Selects which optional allies to recruit.
     fn recruitment(&mut self, count: usize) {
         AllySet::RECRUITABLE
-            .iter()
+            .into_iter()
             .combinations(count)
             .map(|combo| combo.into_iter().collect::<AllySet>())
             .par_bridge()
@@ -84,7 +92,7 @@ impl OutcomeMapGenerator {
         self.choices.recruitment = recruits;
         let allies = AllySet::REQUIRED | recruits;
         let loyalty_mission_iter = allies
-            .iter()
+            .into_iter()
             .powerset()
             .map(|subset| subset.into_iter().collect::<AllySet>());
 
@@ -159,52 +167,46 @@ impl OutcomeMapGenerator {
     fn tech_specialist(&mut self, allies: AllySet) {
         for tech in allies & AllySet::TECHS {
             self.choices.tech_specialist = Some(tech);
-            self.first_leader(allies);
+            self.second_fireteam_leader(allies);
         }
     }
 
-    /// Selects a leader for the first fireteam if the tech is loyal and ideal.
-    fn first_leader(&mut self, allies: AllySet) {
-        self.choices.first_leader = None;
+    /// Selects a leader for the second fireteam if the tech is loyal and ideal.
+    fn second_fireteam_leader(&mut self, allies: AllySet) {
+        self.choices.ideal_second_fireteam_leaders = AllySet::NOBODY;
+        self.choices.second_fireteam_leader_is_ideal = false;
 
-        // If the tech specialist is neither loyal nor ideal, they will die.
+        // If the tech specialist is neither loyal nor ideal, or if there are no loyal, ideal
+        // leaders, they will die.
         let tech = self.choices.tech_specialist.unwrap();
-        if !(self.loyal() & AllySet::IDEAL_TECHS).contains(tech) {
+        let ideal_leaders = (allies - tech) & self.loyal() & AllySet::IDEAL_LEADERS;
+        if !(self.loyal() & AllySet::IDEAL_TECHS).contains(tech) || ideal_leaders.is_empty() {
             self.biotic_specialist(allies - tech);
             return;
         }
 
-        // Otherwise, their survival depends on the first fireteam leader.
-        let ideal_leaders = (allies - tech) & self.loyal() & AllySet::IDEAL_LEADERS;
-        if !ideal_leaders.is_empty() {
-            self.choices.first_leader = Some(FirstLeader {
-                is_ideal: true,
-                ideal_leaders,
-            });
-            self.biotic_specialist(allies);
-        }
-
-        // Choosing a non-ideal leader causes the tech specialist to die.
-        self.choices.first_leader = Some(FirstLeader {
-            is_ideal: false,
-            ideal_leaders,
-        });
+        // Otherwise, their survival depends on the second fireteam leader. Choosing a non-ideal
+        // or disloyal leader causes the tech specialist to die.
+        self.choices.ideal_second_fireteam_leaders = ideal_leaders;
         self.biotic_specialist(allies - tech);
+
+        self.choices.second_fireteam_leader_is_ideal = true;
+        self.biotic_specialist(allies);
     }
 
     /// Selects a biotic specialist.
     fn biotic_specialist(&mut self, allies: AllySet) {
         for biotic in allies & AllySet::BIOTICS {
             self.choices.biotic_specialist = Some(biotic);
-            self.second_leader(allies);
+            self.diversion_team_leader(allies);
         }
     }
 
-    /// Selects a leader for the second fireteam.
-    fn second_leader(&mut self, allies: AllySet) {
-        let selectable_allies = allies - self.choices.biotic_specialist.unwrap();
+    /// Selects a leader for the diversion team.
+    fn diversion_team_leader(&mut self, allies: AllySet) {
+        let selectable_allies = allies - self.choices.biotic_specialist;
         for leader in selectable_allies {
-            self.choices.second_leader = Some(leader);
+            self.choices.diversion_team_leader = Some(leader);
             self.crew_escort(allies);
         }
     }
@@ -219,8 +221,8 @@ impl OutcomeMapGenerator {
         // possible—allies remain at this point.
         if allies.len() > 4 {
             let selectable_allies = (allies & AllySet::ESCORTS)
-                - self.choices.biotic_specialist.unwrap()
-                - self.choices.second_leader.unwrap();
+                - self.choices.biotic_specialist
+                - self.choices.diversion_team_leader;
             for escort in selectable_allies {
                 self.choices.crew_escort = Some(escort);
                 // If the escort is not loyal, they will die.
@@ -242,10 +244,10 @@ impl OutcomeMapGenerator {
             return;
         }
 
-        // The biotic specialist, escort (if selected), and second fireteam leader cannot be
+        // The biotic specialist, escort (if selected), and diversion team leader cannot be
         // selected.
-        let escort = AllySet::from(self.choices.crew_escort);
-        let leader = self.choices.second_leader.unwrap();
+        let escort = self.choices.crew_escort;
+        let leader = self.choices.diversion_team_leader;
         let mut potential_victims = allies - biotic - escort - leader;
 
         // If too few allies remain to merit a meaningful selection, omit the decision.
@@ -270,10 +272,10 @@ impl OutcomeMapGenerator {
         let escort = AllySet::from(self.choices.crew_escort);
         let active_allies = allies - escort;
 
-        // Although the second fireteam leader was selected earlier, their survival can only be
+        // Although the diversion team leader was selected earlier, their survival can only be
         // determined at this point because they will not die if there are fewer than four
         // available allies, regardless of their loyalty or suitedness to the role.
-        let leader = self.choices.second_leader.unwrap();
+        let leader = self.choices.diversion_team_leader.unwrap();
         let leader_survives = active_allies.len() < 4
             || AllySet::IMMORTAL_LEADERS.contains(leader)
             || (AllySet::IDEAL_LEADERS & self.loyal()).contains(leader);
@@ -282,7 +284,7 @@ impl OutcomeMapGenerator {
         let active_allies = active_allies - victim;
 
         for squad in active_allies
-            .iter()
+            .into_iter()
             .combinations(2)
             .map(|combo| combo.into_iter().collect::<AllySet>())
         {
@@ -309,5 +311,60 @@ impl OutcomeMapGenerator {
                 count: 1,
                 example: self.choices.complete(),
             });
+    }
+}
+
+/// Running ledger of a [`DecisionPath`]
+///
+/// All fields whose types do not implement [`Default`] are wrapped in an [`Option`].
+#[derive(Clone, Default)]
+struct DecisionPathLedger {
+    recruitment: AllySet,
+    loyalty_missions: AllySet,
+    upgraded_armor: bool,
+    upgraded_shield: bool,
+    cargo_bay_squad: SquadSelection,
+    upgraded_weapon: bool,
+    tech_specialist: Option<Ally>,
+    ideal_second_fireteam_leaders: AllySet,
+    second_fireteam_leader_is_ideal: bool,
+    biotic_specialist: Option<Ally>,
+    diversion_team_leader: Option<Ally>,
+    crew_escort: Option<Ally>,
+    the_long_walk: SquadSelection,
+    final_squad: AllySet,
+}
+
+impl DecisionPathLedger {
+    /// Copies all fields into a [`DecisionPath`] object.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if any of the following fields are [`None`]:
+    ///
+    /// - `tech_specialist`
+    /// - `biotic_specialist`
+    /// - `diversion_team_leader`
+    pub fn complete(&self) -> DecisionPath {
+        DecisionPath {
+            recruitment: self.recruitment,
+            loyalty_missions: self.loyalty_missions,
+            upgraded_armor: self.upgraded_armor,
+            upgraded_shield: self.upgraded_shield,
+            cargo_bay_squad: self.cargo_bay_squad,
+            upgraded_weapon: self.upgraded_weapon,
+            tech_specialist: self.tech_specialist.expect("tech specialist was selected"),
+            ideal_second_fireteam_leaders: self.ideal_second_fireteam_leaders,
+            second_fireteam_leader_is_ideal: self.second_fireteam_leader_is_ideal,
+            biotic_specialist: self
+                .biotic_specialist
+                .expect("biotic specialist was selected"),
+            diversion_team_leader: self
+                .diversion_team_leader
+                .expect("diversion team leader was selected"),
+            crew_escort: self.crew_escort,
+            the_long_walk: self.the_long_walk,
+            final_squad: self.final_squad,
+        }
     }
 }

@@ -5,7 +5,7 @@
 //!
 //! ## Usage
 //!
-//! `cargo run --release --example generate -- PATH`
+//! `cargo run --release --features generate --example generate -- PATH`
 //!
 //! - `PATH` is the path in which to store the outcome data. If a file already exists at the path,
 //!   it will be replaced.

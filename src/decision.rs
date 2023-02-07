@@ -4,7 +4,8 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ally::{Ally, AllySet};
+use crate::ally::Ally;
+use crate::allyset::AllySet;
 
 /// Squad selection
 ///
@@ -18,6 +19,9 @@ use crate::ally::{Ally, AllySet};
 /// 2. _The Long Walk_ sub-mission's squad selection can cause allies to die that would otherwise
 ///    have survived if a loyal, ideal biotic specialist had been chosen. The victim must be in
 ///    Shepard's squad, and the survivors must **not** be in the squad.
+///
+/// See the [`add_victim`](#method.add_victim) method for further explanation and a realistic
+/// example of how this type is used.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct SquadSelection {
     survivors: AllySet,
@@ -33,6 +37,28 @@ impl SquadSelection {
     /// Adds the given [`Ally`] as the selected victim.
     ///
     /// Any current victim becomes a survivor.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use me2finale::ally::Ally::*;
+    /// use me2finale::decision::SquadSelection;
+    ///
+    /// let mut selection = SquadSelection::new();
+    ///
+    /// // Suppose we are selecting the cargo bay squad and know that Kasumi will die if we do not
+    /// // select her. This means she is the first victim.
+    /// selection.add_victim(Kasumi);
+    ///
+    /// // If we *do* select Kasumi, however, then someone else *must* die instead. Suppose the
+    /// // next victim is Legion.
+    /// selection.add_victim(Legion);
+    ///
+    /// // Querying the selection at this point indicates that Kasumi will survive if we select her
+    /// // for the cargo bay squad, but we must *not* select Legion in order for them to die.
+    /// assert!(selection.survivors().contains(Kasumi));
+    /// assert_eq!(selection.victim(), Some(Legion));
+    /// ```
     pub fn add_victim(&mut self, ally: Ally) {
         if let Some(victim) = self.victim {
             self.survivors |= victim;
@@ -52,22 +78,6 @@ impl SquadSelection {
     }
 }
 
-/// Selection parameters for the leader of the first fireteam
-///
-/// If an ideal tech specialist is selected, the leader of the first fireteam affects whether the
-/// tech specialist will survive. If they are ideal (`is_ideal == true`), then the tech specialist
-/// will survive. The available ideal leaders at the time this decision is made must be recorded
-/// in `ideal_leaders` so that it is clear in the description of this decision who should be
-/// selected. If they are _not_ ideal, the tech specialist will die, which means an available ally
-/// that is _not_ an ideal leader should be selected.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub struct FirstLeader {
-    /// Was an ideal leader selected?
-    pub is_ideal: bool,
-    /// Which available allies are ideal leaders?
-    pub ideal_leaders: AllySet,
-}
-
 /// Complete record of choices for a playthrough of the final mission in _Mass Effect 2_
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DecisionPath {
@@ -85,12 +95,15 @@ pub struct DecisionPath {
     pub upgraded_weapon: bool,
     /// [`Ally`] selected as the tech specialist
     pub tech_specialist: Ally,
-    /// See [`FirstLeader`].
-    pub first_leader: Option<FirstLeader>,
+    /// Which loyal, ideal leaders were available to lead the second fireteam? If the choice does
+    /// not matter, this field is empty.
+    pub ideal_second_fireteam_leaders: AllySet,
+    /// Was a loyal, ideal leader selected for the second fireteam?
+    pub second_fireteam_leader_is_ideal: bool,
     /// [`Ally`] selected as the biotic specialist
     pub biotic_specialist: Ally,
-    /// [`Ally`] selected to lead the second fireteam
-    pub second_leader: Ally,
+    /// [`Ally`] selected to lead the diversion team
+    pub diversion_team_leader: Ally,
     /// [`Ally`] optionally selected to escort the crew back to _The Normandy_
     pub crew_escort: Option<Ally>,
     /// Allies _not_ selected for Shepard's squad for _The Long Walk_
@@ -125,9 +138,14 @@ impl Display for DecisionPath {
         if loyalty_mission_allies.contains(Ally::Samara) {
             // Note: If `asari` contains more than one `Ally`, this `DecisionPath` is malformed.
             let asari = self.recruitment & AllySet::ASARI;
+            let possessive = if asari.contains(Ally::Samara) {
+                "her"
+            } else {
+                "Samara's"
+            };
             writeln!(
                 f,
-                "- Choose {asari} at the end of Samara's loyalty mission."
+                "- Choose {asari} at the end of {possessive} loyalty mission."
             )?;
         }
 
@@ -148,17 +166,19 @@ impl Display for DecisionPath {
 
         writeln!(f, "Choose {} as the tech specialist.", self.tech_specialist)?;
 
-        if let Some(first_leader) = self.first_leader {
+        if self.ideal_second_fireteam_leaders.is_empty() {
+            writeln!(f, "The second fireteam leader does not matter.")?;
+        } else {
+            let modifier = (!self.second_fireteam_leader_is_ideal)
+                .then_some("anyone except ")
+                .unwrap_or_default();
+            let ideal_leaders = self
+                .ideal_second_fireteam_leaders
+                .to_string_with_conjunction("or");
             writeln!(
                 f,
-                "Choose {}{} to lead the second fireteam.",
-                (!first_leader.is_ideal)
-                    .then_some("anyone except ")
-                    .unwrap_or_default(),
-                first_leader.ideal_leaders.to_string_with_conjunction("or")
+                "Choose {modifier}{ideal_leaders} to lead the second fireteam."
             )?;
-        } else {
-            writeln!(f, "The second fireteam leader does not matter.")?;
         }
 
         writeln!(
@@ -170,7 +190,7 @@ impl Display for DecisionPath {
         writeln!(
             f,
             "Choose {} to lead the diversion team.",
-            self.second_leader
+            self.diversion_team_leader
         )?;
 
         match self.crew_escort {
@@ -191,67 +211,10 @@ impl Display for DecisionPath {
     }
 }
 
-#[cfg(feature = "generate")]
-pub(crate) use generate::DecisionPathLedger;
-
-#[cfg(feature = "generate")]
-mod generate {
-    use super::*;
-
-    /// This struct serves as a running ledger of a [`DecisionPath`]. All fields whose types do not
-    /// implement [`Default`] are wrapped in an [`Option`].
-    #[derive(Clone, Default)]
-    pub struct DecisionPathLedger {
-        pub recruitment: AllySet,
-        pub loyalty_missions: AllySet,
-        pub upgraded_armor: bool,
-        pub upgraded_shield: bool,
-        pub cargo_bay_squad: SquadSelection,
-        pub upgraded_weapon: bool,
-        pub tech_specialist: Option<Ally>,
-        pub first_leader: Option<FirstLeader>,
-        pub biotic_specialist: Option<Ally>,
-        pub second_leader: Option<Ally>,
-        pub crew_escort: Option<Ally>,
-        pub the_long_walk: SquadSelection,
-        pub final_squad: AllySet,
-    }
-
-    impl DecisionPathLedger {
-        /// Copies all fields into a [`DecisionPath`] object.
-        ///
-        /// # Panics
-        ///
-        /// This method panics if any of the following fields are [`None`]:
-        ///
-        /// - `tech_specialist`
-        /// - `biotic_specialist`
-        /// - `second_leader`
-        pub fn complete(&self) -> DecisionPath {
-            DecisionPath {
-                recruitment: self.recruitment,
-                loyalty_missions: self.loyalty_missions,
-                upgraded_armor: self.upgraded_armor,
-                upgraded_shield: self.upgraded_shield,
-                cargo_bay_squad: self.cargo_bay_squad,
-                upgraded_weapon: self.upgraded_weapon,
-                tech_specialist: self.tech_specialist.expect("tech specialist was selected"),
-                first_leader: self.first_leader,
-                biotic_specialist: self
-                    .biotic_specialist
-                    .expect("biotic specialist was selected"),
-                second_leader: self.second_leader.expect("second leader was selected"),
-                crew_escort: self.crew_escort,
-                the_long_walk: self.the_long_walk,
-                final_squad: self.final_squad,
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Ally::*;
 
     #[test]
     fn squad() {
@@ -259,20 +222,20 @@ mod tests {
         assert_eq!(squad.survivors(), AllySet::NOBODY);
         assert_eq!(squad.victim(), None);
 
-        squad.add_victim(Ally::Jack);
+        squad.add_victim(Jack);
         assert_eq!(squad.survivors(), AllySet::NOBODY);
-        assert_eq!(squad.victim().unwrap(), Ally::Jack);
+        assert_eq!(squad.victim(), Some(Jack));
 
-        squad.add_victim(Ally::Miranda);
-        assert_eq!(squad.survivors(), Ally::Jack.into());
-        assert_eq!(squad.victim().unwrap(), Ally::Miranda);
+        squad.add_victim(Miranda);
+        assert_eq!(squad.survivors(), Jack.into());
+        assert_eq!(squad.victim(), Some(Miranda));
 
-        squad.add_victim(Ally::Legion);
-        assert_eq!(squad.survivors(), Ally::Jack | Ally::Miranda);
-        assert_eq!(squad.victim().unwrap(), Ally::Legion);
+        squad.add_victim(Legion);
+        assert_eq!(squad.survivors(), Jack | Miranda);
+        assert_eq!(squad.victim(), Some(Legion));
 
-        squad.add_victim(Ally::Thane);
-        assert_eq!(squad.survivors(), Ally::Jack | Ally::Miranda | Ally::Legion);
-        assert_eq!(squad.victim().unwrap(), Ally::Thane);
+        squad.add_victim(Thane);
+        assert_eq!(squad.survivors(), Jack | Miranda | Legion);
+        assert_eq!(squad.victim(), Some(Thane));
     }
 }
